@@ -1,3 +1,4 @@
+import threading
 import gspread
 import os
 import json
@@ -11,6 +12,22 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
+
+from flask import Flask
+
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def home():
+    return "Telegram Bot is running!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+
+    flask_app.run(
+        host="0.0.0.0",
+        port=port
+    )
 
 # =========================================
 # KONFIGURASI
@@ -50,7 +67,7 @@ sheet = spreadsheet.sheet1
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Kirim kode SF untuk melihat data sales.\n\nContoh:\nSF001"
+        "Kirim kode SF untuk melihat data sales.\n\nContoh:\nSPMKN89"
     )
 
 # =========================================
@@ -186,4 +203,8 @@ app.add_handler(
 
 print("Bot berjalan...")
 
+# Jalankan web server di thread terpisah
+threading.Thread(target=run_web).start()
+
+# Jalankan telegram bot
 app.run_polling()
