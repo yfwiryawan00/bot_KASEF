@@ -1,14 +1,16 @@
+import threading
 import gspread
 import os
 import json
-import asyncio
+import logging
 
-from flask import Flask, request
+from flask import Flask
+
 from oauth2client.service_account import ServiceAccountCredentials
 
 from telegram import Update
 from telegram.ext import (
-    Application,
+    ApplicationBuilder,
     CommandHandler,
     MessageHandler,
     ContextTypes,
@@ -16,17 +18,16 @@ from telegram.ext import (
 )
 
 # =========================================
-# KONFIGURASI
+# LOGGING
 # =========================================
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-WEBHOOK_URL = "https://bot-kasef.onrender.com/webhook"
-
-SPREADSHEET_ID = "1u2NTeyID8YfiMjzttRfLWnx4kGtoDyw-3YFSO9t1O_M"
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
 # =========================================
-# FLASK APP
+# FLASK APP (UNTUK RENDER)
 # =========================================
 
 flask_app = Flask(__name__)
@@ -34,6 +35,22 @@ flask_app = Flask(__name__)
 @flask_app.route("/")
 def home():
     return "KASEF Bot is running!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+
+    flask_app.run(
+        host="0.0.0.0",
+        port=port
+    )
+
+# =========================================
+# KONFIGURASI
+# =========================================
+
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+SPREADSHEET_ID = "1u2NTeyID8YfiMjzttRfLWnx4kGtoDyw-3YFSO9t1O_M"
 
 # =========================================
 # CONNECT GOOGLE SHEET
@@ -60,18 +77,16 @@ spreadsheet = client.open_by_key(SPREADSHEET_ID)
 sheet = spreadsheet.sheet1
 
 # =========================================
-# TELEGRAM APPLICATION
-# =========================================
-
-app = Application.builder().token(TOKEN).build()
-
-# =========================================
 # COMMAND START
 # =========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     await update.message.reply_text(
-        "Kirim kode SF untuk melihat data sales.\n\nContoh:\nSPMKN89"
+        "📊 Selamat datang di KASEF Bot\n\n"
+        "Kirim kode SF untuk melihat data sales.\n\n"
+        "Contoh:\n"
+        "SPMKN89"
     )
 
 # =========================================
@@ -80,67 +95,71 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cari_sf(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    kode_input = update.message.text.strip().upper()
+    try:
 
-    data = sheet.get_all_values()
+        kode_input = update.message.text.strip().upper()
 
-    ditemukan = False
+        data = sheet.get_all_values()
 
-    for row in data[1:]:
+        ditemukan = False
 
-        if len(row) >= 29:
+        # Skip header
+        for row in data[1:]:
 
-            kode_sheet = row[1].strip().upper()
+            # Pastikan kolom cukup
+            if len(row) >= 29:
 
-            if kode_sheet == kode_input:
+                kode_sheet = row[1].strip().upper()
 
-                # =========================
-                # IDENTITAS SF
-                # =========================
+                if kode_sheet == kode_input:
 
-                nama_sf = row[0]
-                kode_sf = row[1]
-                cluster = row[11]
-                status = row[13]
+                    # =========================
+                    # IDENTITAS SF
+                    # =========================
 
-                # =========================
-                # TARGET
-                # =========================
+                    nama_sf = row[0]
+                    kode_sf = row[1]
+                    cluster = row[11]
+                    status = row[13]
 
-                target_ps = row[20]
-                target_sales_fee = row[21]
+                    # =========================
+                    # TARGET
+                    # =========================
 
-                # =========================
-                # SALES PERFORMANCE
-                # =========================
+                    target_ps = row[20]
+                    target_sales_fee = row[21]
 
-                total_ps_mtd = row[15]
-                total_ps_m1 = row[14]
-                mom_ps = row[16]
+                    # =========================
+                    # SALES PERFORMANCE
+                    # =========================
 
-                total_sf_mtd = row[18]
-                total_sf_m1 = row[17]
-                mom_sales_fee = row[19]
+                    total_ps_mtd = row[15]
+                    total_ps_m1 = row[14]
+                    mom_ps = row[16]
 
-                gap_ps = row[22]
-                gap_sales_fee = row[23]
+                    total_sf_mtd = row[18]
+                    total_sf_m1 = row[17]
+                    mom_sales_fee = row[19]
 
-                # =========================
-                # DJP PERFORMANCE
-                # =========================
+                    gap_ps = row[22]
+                    gap_sales_fee = row[23]
 
-                odp_assign = row[24]
-                odp_visit = row[25]
-                ach_visit = row[26]
-                daily_visit = row[27]
+                    # =========================
+                    # DJP PERFORMANCE
+                    # =========================
 
-                # =========================
-                # UPDATE DATE
-                # =========================
+                    odp_assign = row[24]
+                    odp_visit = row[25]
+                    ach_visit = row[26]
+                    daily_visit = row[27]
 
-                update_data = row[28]
+                    # =========================
+                    # UPDATE DATE
+                    # =========================
 
-                pesan = f"""
+                    update_data = row[28]
+
+                    pesan = f"""
 📊 <b>UPDATE DATA SALES</b>
 🗓 <b>{update_data}</b>
 
@@ -181,22 +200,33 @@ Ach Visit : {ach_visit}
 ODP Daily Visit : {daily_visit}
 """
 
-                await update.message.reply_text(
-                    pesan,
-                    parse_mode="HTML"
-                )
+                    await update.message.reply_text(
+                        pesan,
+                        parse_mode="HTML"
+                    )
 
-                ditemukan = True
-                break
+                    ditemukan = True
+                    break
 
-    if not ditemukan:
+        if not ditemukan:
+
+            await update.message.reply_text(
+                f"❌ Kode SF '{kode_input}' tidak ditemukan."
+            )
+
+    except Exception as e:
+
+        logging.error(e)
+
         await update.message.reply_text(
-            f"Kode SF '{kode_input}' tidak ditemukan."
+            "⚠️ Terjadi error saat mengambil data."
         )
 
 # =========================================
-# HANDLER
+# MAIN
 # =========================================
+
+app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 
@@ -208,38 +238,15 @@ app.add_handler(
 )
 
 # =========================================
-# WEBHOOK
-# =========================================
-
-@flask_app.post("/webhook")
-async def webhook():
-
-    update = Update.de_json(
-        request.get_json(force=True),
-        app.bot
-    )
-
-    await app.process_update(update)
-
-    return "OK"
-
-# =========================================
-# MAIN
+# RUN
 # =========================================
 
 if __name__ == "__main__":
 
-    async def setup():
-        await app.initialize()
-        await app.bot.set_webhook(WEBHOOK_URL)
+    print("KASEF Bot berjalan...")
 
-    asyncio.run(setup())
+    # Flask untuk buka port Render
+    threading.Thread(target=run_web).start()
 
-    print("Webhook bot berjalan...")
-
-    port = int(os.environ.get("PORT", 10000))
-
-    flask_app.run(
-        host="0.0.0.0",
-        port=port
-    )
+    # Telegram polling
+    app.run_polling()
