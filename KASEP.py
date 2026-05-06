@@ -1,33 +1,19 @@
-import threading
 import gspread
 import os
 import json
+import asyncio
+
+from flask import Flask, request
 from oauth2client.service_account import ServiceAccountCredentials
 
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     MessageHandler,
     ContextTypes,
     filters
 )
-
-from flask import Flask
-
-flask_app = Flask(__name__)
-
-@flask_app.route("/")
-def home():
-    return "Telegram Bot is running!"
-
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-
-    flask_app.run(
-        host="0.0.0.0",
-        port=port
-    )
 
 # =========================================
 # KONFIGURASI
@@ -35,7 +21,19 @@ def run_web():
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 
+WEBHOOK_URL = "https://bot-kasef.onrender.com/webhook"
+
 SPREADSHEET_ID = "1u2NTeyID8YfiMjzttRfLWnx4kGtoDyw-3YFSO9t1O_M"
+
+# =========================================
+# FLASK APP
+# =========================================
+
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def home():
+    return "KASEF Bot is running!"
 
 # =========================================
 # CONNECT GOOGLE SHEET
@@ -62,6 +60,12 @@ spreadsheet = client.open_by_key(SPREADSHEET_ID)
 sheet = spreadsheet.sheet1
 
 # =========================================
+# TELEGRAM APPLICATION
+# =========================================
+
+app = Application.builder().token(TOKEN).build()
+
+# =========================================
 # COMMAND START
 # =========================================
 
@@ -76,67 +80,65 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cari_sf(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    kode_sf = update.message.text.strip().upper()
+    kode_input = update.message.text.strip().upper()
 
     data = sheet.get_all_values()
 
     ditemukan = False
 
-    # Skip header
     for row in data[1:]:
 
-        # Pastikan kolom sampai AC tersedia
         if len(row) >= 29:
 
-            kode_sheet = row[1].strip().upper()   # Kolom B
+            kode_sheet = row[1].strip().upper()
 
-            if kode_sheet == kode_sf:
+            if kode_sheet == kode_input:
 
                 # =========================
                 # IDENTITAS SF
                 # =========================
 
-                nama_sf = row[0]      # A
-                kode_sf = row[1]      # B
-                cluster = row[11]     # L
-                status = row[13]      # N
+                nama_sf = row[0]
+                kode_sf = row[1]
+                cluster = row[11]
+                status = row[13]
 
                 # =========================
                 # TARGET
                 # =========================
 
-                target_ps = row[20]           # U
-                target_sales_fee = row[21]    # V
+                target_ps = row[20]
+                target_sales_fee = row[21]
 
                 # =========================
                 # SALES PERFORMANCE
                 # =========================
 
-                total_ps_mtd = row[15]        # P
-                total_ps_m1 = row[14]         # O
-                mom_ps = row[16]              # Q
+                total_ps_mtd = row[15]
+                total_ps_m1 = row[14]
+                mom_ps = row[16]
 
-                total_sf_mtd = row[18]        # S
-                total_sf_m1 = row[17]         # R
-                mom_sales_fee = row[19]       # T
+                total_sf_mtd = row[18]
+                total_sf_m1 = row[17]
+                mom_sales_fee = row[19]
 
-                gap_ps = row[22]              # W
-                gap_sales_fee = row[23]       # X
+                gap_ps = row[22]
+                gap_sales_fee = row[23]
 
                 # =========================
                 # DJP PERFORMANCE
                 # =========================
 
-                odp_assign = row[24]          # Y
-                odp_visit = row[25]           # Z
-                ach_visit = row[26]           # AA
-                daily_visit = row[27]         # AB
+                odp_assign = row[24]
+                odp_visit = row[25]
+                ach_visit = row[26]
+                daily_visit = row[27]
 
                 # =========================
                 # UPDATE DATE
                 # =========================
 
-                update_data = row[28]         # AC
+                update_data = row[28]
 
                 pesan = f"""
 📊 <b>UPDATE DATA SALES</b>
@@ -179,32 +181,65 @@ Ach Visit : {ach_visit}
 ODP Daily Visit : {daily_visit}
 """
 
-                await update.message.reply_text(pesan,parse_mode="HTML")
+                await update.message.reply_text(
+                    pesan,
+                    parse_mode="HTML"
+                )
 
                 ditemukan = True
                 break
 
     if not ditemukan:
         await update.message.reply_text(
-            f"Kode SF '{kode_sf}' tidak ditemukan."
+            f"Kode SF '{kode_input}' tidak ditemukan."
         )
+
+# =========================================
+# HANDLER
+# =========================================
+
+app.add_handler(CommandHandler("start", start))
+
+app.add_handler(
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        cari_sf
+    )
+)
+
+# =========================================
+# WEBHOOK
+# =========================================
+
+@flask_app.post("/webhook")
+async def webhook():
+
+    update = Update.de_json(
+        request.get_json(force=True),
+        app.bot
+    )
+
+    await app.process_update(update)
+
+    return "OK"
 
 # =========================================
 # MAIN
 # =========================================
 
-app = ApplicationBuilder().token(TOKEN).build()
+if __name__ == "__main__":
 
-app.add_handler(CommandHandler("start", start))
+    async def setup():
+        await app.initialize()
+        await app.bot.set_webhook(WEBHOOK_URL)
 
-app.add_handler(
-    MessageHandler(filters.TEXT & ~filters.COMMAND, cari_sf)
-)
+    asyncio.run(setup())
 
-print("Bot berjalan...")
+    print("Webhook bot berjalan...")
 
-# Jalankan web server di thread terpisah
-threading.Thread(target=run_web).start()
+    port = int(os.environ.get("PORT", 10000))
 
-# Jalankan telegram bot
-app.run_polling()
+    flask_app.run(
+        host="0.0.0.0",
+        port=port
+    )
