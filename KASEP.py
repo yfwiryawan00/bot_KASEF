@@ -183,8 +183,8 @@ Total PS Mtd : {total_ps_mtd}
 Total PS M-1 : {total_ps_m1}
 MoM PS : {mom_ps}
 
-Total Sales Fee Mtd : {total_sf_mtd}
-Total Sales Fee M-1 : {total_sf_m1}
+Potensi Sales Fee Mtd : {total_sf_mtd}
+Potensi Sales Fee M-1 : {total_sf_m1}
 MoM Sales Fee : {mom_sales_fee}
 
 Gap PS : {gap_ps}
